@@ -1,0 +1,2 @@
+# COOLServer
+A Cool Server
