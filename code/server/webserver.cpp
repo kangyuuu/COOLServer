@@ -1,5 +1,4 @@
 #include "webserver.h"
-
 using namespace std;
 
 WebServer::WebServer(config* cfgObj):
@@ -39,7 +38,7 @@ WebServer::WebServer(config* cfgObj):
     //epoller
     std::unique_ptr<Epoller> epl(new Epoller());
     epoller_ = move(epl);
-    //数据库
+    //数据库连接池
     SqlConnPool::Instance()->Init("localhost", cfgObj->sqlPort_, cfgObj->sqlUsr_.c_str() , cfgObj->sqlPSWD_.c_str() , cfgObj->dbName_.c_str() , cfgObj->sqlPoolNum_);
     // 初始化listenfd
     if(!InitSocket_lfd()) { isClose_ = true;} 
@@ -79,14 +78,14 @@ void WebServer::InitEventMode_(int trigMode) {
 }
 
 void WebServer::Launch() {
-    int timeMS = -1; 
+    int timeMS = -1;
     if(!isClose_) { LOG_INFO("========== Server start =========="); }
     while(!isClose_) {
         if(timeoutS_ > 0) {
             timeMS = timer_->nextNodeClock()*1000;
         }
         int eventCnt = epoller_->Wait(timeMS);
-        for(int i = 0; i < eventCnt; i++) {           
+        for(int i = 0; i < eventCnt; i++) {
             int fd = epoller_->GetEventFd(i);
             uint32_t events = epoller_->GetEvents(i);
             if(fd == listenFd_) {
@@ -109,7 +108,6 @@ void WebServer::Launch() {
         }
     }
 }
-
 void WebServer::SendError_(int fd, const char*info) {
     assert(fd > 0);
     int ret = send(fd, info, strlen(info), 0);
@@ -149,13 +147,13 @@ void WebServer::DealListen_() {
             return;
         }
         AddClient_(fd, addr);
-    } while(listenEvent_ & EPOLLET); 
+    } while(listenEvent_ & EPOLLET);  
 }
 
 void WebServer::DealRead_(HttpConn* client) {
     assert(client);
     ExtentTime_(client);
-    threadpool_->AddTask(std::bind(&WebServer::OnRead_, this, client));  
+    threadpool_->AddTask(std::bind(&WebServer::OnRead_, this, client)); 
 }
 
 void WebServer::DealWrite_(HttpConn* client) {
@@ -173,7 +171,7 @@ void WebServer::OnRead_(HttpConn* client) {
     assert(client);
     int ret = -1;
     int readErrno = 0;
-    ret = client->read(&readErrno);  
+    ret = client->read(&readErrno); 
     if(ret <= 0 && readErrno != EAGAIN) {
         CloseConn_(client);
         return;
@@ -182,10 +180,10 @@ void WebServer::OnRead_(HttpConn* client) {
 }
 
 void WebServer::OnProcess(HttpConn* client) {
-    if(client->process()) {
-        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);   
+    if(client->processData()) {
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLOUT);  
     } else {
-        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLIN);  
+        epoller_->ModFd(client->GetFd(), connEvent_ | EPOLLIN); 
     }
 }
 

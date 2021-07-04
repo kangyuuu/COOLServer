@@ -1,7 +1,7 @@
 #include "httpconn.h"
 using namespace std;
 
-const char* HttpConn::srcDir;  
+const char* HttpConn::srcDir; 
 std::atomic<int> HttpConn::userCount; 
 bool HttpConn::isET;
 
@@ -20,8 +20,8 @@ void HttpConn::init(int fd, const sockaddr_in& addr) {
     userCount++;
     addr_ = addr;
     fd_ = fd;
-    writeBuff_.RetrieveAll();
-    readBuff_.RetrieveAll();
+    writeBuff_.RecycleAll();
+    readBuff_.RecycleAll();
     isClose_ = false;
     LOG_INFO("Client[%d](%s:%d) in, userCount:%d", fd_, GetIP(), GetPort(), (int)userCount);
 }
@@ -59,14 +59,14 @@ ssize_t HttpConn::read(int* saveErrno) {
         if (len <= 0) {
             break;
         }
-    } while (isET); 
+    } while (isET);  //循环读
     return len;
 }
 
 ssize_t HttpConn::write(int* saveErrno) {
     ssize_t len = -1;
     do {
-        len = writev(fd_, iov_, iovCnt_);   //大文件传输 聚集写，返回实际写的字节数
+        len = writev(fd_, iov_, iovCnt_);   //聚集写
         if(len <= 0) {
             *saveErrno = errno;
             break;
@@ -76,37 +76,35 @@ ssize_t HttpConn::write(int* saveErrno) {
             iov_[1].iov_base = (uint8_t*) iov_[1].iov_base + (len - iov_[0].iov_len);
             iov_[1].iov_len -= (len - iov_[0].iov_len);
             if(iov_[0].iov_len) {
-                writeBuff_.RetrieveAll();
+                writeBuff_.RecycleAll();
                 iov_[0].iov_len = 0;
             }
         }
         else {
             iov_[0].iov_base = (uint8_t*)iov_[0].iov_base + len; 
             iov_[0].iov_len -= len; 
-            writeBuff_.Retrieve(len);
+            writeBuff_.Recycle(len);
         }
     } while(isET || ToWriteBytes() > 10240);
     return len;
 }
 
-bool HttpConn::process() {
+bool HttpConn::processData() {
     request_.Init();
     if(readBuff_.ReadableBytes() <= 0) {
         return false;
     }
-    else if(request_.parse(readBuff_)) {  
+    else if(request_.parseData(readBuff_)) {   //解析数据
         LOG_DEBUG("%s", request_.path().c_str());
         response_.Init(srcDir, request_.path(), request_.IsKeepAlive(), 200);
     } else {
         response_.Init(srcDir, request_.path(), false, 400);
     }
 
-    response_.MakeResponse(writeBuff_);  
-
+    response_.MakeResponse(writeBuff_);     //响应内容
     iov_[0].iov_base = const_cast<char*>(writeBuff_.Peek());
     iov_[0].iov_len = writeBuff_.ReadableBytes();
     iovCnt_ = 1;
-
 
     if(response_.FileLen() > 0  && response_.File()) {
         iov_[1].iov_base = response_.File();

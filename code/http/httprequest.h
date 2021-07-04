@@ -8,6 +8,7 @@
 #include <errno.h>     
 #include <mysql/mysql.h>  
 
+
 #include "../buffer/buffer.h"
 #include "../log/log.h"
 #include "../pool/sqlconnpool.h"
@@ -30,7 +31,7 @@ public:
         FINISH,        
     };
 
-    enum HTTP_CODE {
+    enum HTTP_CODE {   //从状态机
         NO_REQUEST = 0,
         GET_REQUEST,
         BAD_REQUEST,
@@ -45,7 +46,7 @@ public:
     ~HttpRequest() = default;
 
     void Init();
-    bool parse(Buffer& buff);  
+    bool parseData(Buffer& buff);
 
     std::string path() const;
     std::string& path();
@@ -62,25 +63,28 @@ private:
 
     bool ParseRequestLine_(const std::string& line);
     void ParseHeader_(const std::string& line);
-    void ParseBody_(const std::string& line);
+    void ParseBody_();
 
     void ParsePath_();
     void ParsePost_();
     bool ParseBodyForUserInfo();
+    bool ParseBodyForFile() ;
+    bool SaveFile(char filename[]) ;
 
     static sqlVerifyState UserVerify(const std::string& name, const std::string& pwd, bool isLogin);
 
     PARSE_STATE master_state_;   
-    std::string method_, path_, version_, body_;
-    std::unordered_map<std::string, std::string> header_; 
-    std::unordered_map<std::string, std::string> post_;  
+    std::string method_, path_, version_;
+    Buffer* body_;
+    std::string fileSaveDir_ ;
+    std::unordered_map<std::string, std::string> header_;  
+    std::unordered_map<std::string, std::string> post_;   
 
-    static const std::unordered_set<std::string> DEFAULT_HTML_REQUEST;           
+    static const std::unordered_set<std::string> DEFAULT_HTML_REQUEST;         
     static const std::unordered_map<std::string, int> DEFAULT_HTML_POST_REQUEST; 
     static uint32_t ConverHex(char ch); 
-    void decode_str(char *from);       
+    void decode_str(char *from);        
     void decode_str(std::string& from);
 };
 
-
-#endif //HTTP_REQUEST_H
+#endif 

@@ -10,30 +10,28 @@
 
 class ThreadPool {
 public:
-    explicit ThreadPool(size_t threadCount = 8): pool_(std::make_shared<Pool>()) {        
+    explicit ThreadPool(size_t threadCount = 8): pool_(std::make_shared<Pool>()) {
             assert(threadCount > 0);
-            for(size_t i = 0; i < threadCount; i++) { 
-                std::thread([pool = pool_] {           //lamda表达式
+            for(size_t i = 0; i < threadCount; i++) {  //循环创建线程
+                std::thread([pool = pool_] {    
                     std::unique_lock<std::mutex> locker(pool->mtx);
-                    while(true) {                     
+                    while(true) {    
                         if(!pool->tasks.empty()) {
                             auto task = std::move(pool->tasks.front());   
                             pool->tasks.pop();
                             locker.unlock();
-                            task();                           
+                            task();
                             locker.lock();
                         } 
                         else if(pool->isClosed) break;
                         else pool->cond.wait(locker);
                     }
-                }).detach();                
+                }).detach();  
             }
     }
 
     ThreadPool() = default;
-
     ThreadPool(ThreadPool&&) = default;
-    
     ~ThreadPool() {
         if(static_cast<bool>(pool_)) {
             {
@@ -64,4 +62,4 @@ private:
 };
 
 
-#endif //THREADPOOL_H
+#endif

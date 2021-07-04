@@ -2,10 +2,10 @@
 #include "server/webserver.h"
 
 int main(int argc, char** argv) {
-    //daemon(1, 0);   //以守护进程的形式后台运行
+    //daemon(1, 0);   //脱离控制台
 
     config* CFG = new config();
-    if(argc > 1) CFG->parse_arg(argc , argv); 
+    if(argc > 1) CFG->parse_arg(argc , argv);  //解析参数
     WebServer server(CFG);  
 
     server.Launch();

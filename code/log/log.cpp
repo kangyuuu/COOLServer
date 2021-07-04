@@ -21,7 +21,7 @@ Log::~Log() {
     }
     if(fileptr_) {
         lock_guard<mutex> locker(logmtx_);
-        fflush(fileptr_);  
+        fflush(fileptr_);   //刷新输出缓冲区
         fclose(fileptr_);
     }
 }
@@ -39,7 +39,7 @@ void Log::init(const char* path, const char* suffix )
         workThread_ = move(newThread);
     }
 
-    time_t timeNow = time(nullptr);   
+    time_t timeNow = time(nullptr);  
     struct tm *sysTime = localtime(&timeNow);
     today_ = sysTime->tm_mday;
 
@@ -48,10 +48,10 @@ void Log::init(const char* path, const char* suffix )
             path_, sysTime->tm_year + 1900, sysTime->tm_mon + 1, sysTime->tm_mday, suffix_);
 
     lock_guard<mutex> locker(logmtx_);
-    buff_.RetrieveAll();
+    buff_.RecycleAll();
     if(fileptr_) { 
             if(!logQue_.empty()) que_not_empty.notify_all();
-            fflush(fileptr_);  
+            fflush(fileptr_); 
             fclose(fileptr_); 
         }
     fileptr_ = fopen(fileName, "a"); 
@@ -75,7 +75,7 @@ void Log::flushLogThreadRun()
     Log::Instance()->asyncWriteLog();
 }
 
-void Log::asyncWriteLog()       //异步写日志
+void Log::asyncWriteLog()
 {
     while (true)  
     {
@@ -86,7 +86,7 @@ void Log::asyncWriteLog()       //异步写日志
         }
         
         fputs(logQue_.front().c_str(), fileptr_);
-        fflush(fileptr_);             
+        fflush(fileptr_);   
         logQue_.pop();
     }    
 }
@@ -139,7 +139,7 @@ void Log::logAdd(LOG_LEVEL level, const char *format,...)
             today_ = sysTime->tm_mday;
             lineCnt_ = 0;
         }
-        else { 
+        else {   //log文件超maxline行数  加 -num 后缀
             snprintf(newFile, LOG_NAME_LEN - 72, "%s/%s-%d%s", path_, date, (lineCnt_  / MAX_LINES), suffix_);
         }
 
@@ -170,10 +170,10 @@ void Log::logAdd(LOG_LEVEL level, const char *format,...)
 
     if(isAsync_)
     {
-        logQue_.push(buff_.RetrieveAllToStr());
-        que_not_empty.notify_one(); 
+        logQue_.push(buff_.RecycleAllReturnStr());
+        que_not_empty.notify_one();  //唤醒一个线程
     }
     else fputs(buff_.Peek(), fileptr_);
 
-    buff_.RetrieveAll();
+    buff_.RecycleAll();
 }

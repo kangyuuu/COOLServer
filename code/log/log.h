@@ -6,17 +6,17 @@
 #include <string>
 #include <queue>
 #include <thread>
-#include <stdlib.h>    
+#include <stdlib.h>   
 #include <sys/time.h>
 #include <string.h>
-#include <stdarg.h>           
+#include <stdarg.h>   
 #include <assert.h>
-#include <sys/stat.h>       
+#include <sys/stat.h> 
 #include "../buffer/buffer.h"
 
 using namespace std ;
 
-enum LOG_LEVEL { V_INFO = 0 , V_DEBUG , V_WARN , V_ERROR}; 
+enum LOG_LEVEL { V_INFO = 0 , V_DEBUG , V_WARN , V_ERROR};  //日志等级
 
 class Log 
 {
@@ -26,7 +26,7 @@ public :
     static Log* Instance() ;  //单例化模式
     static void flushLogThreadRun() ;  
 
-    void asyncWriteLog() ;     
+    void asyncWriteLog() ;      //异步写日志
     void logAdd(LOG_LEVEL level, const char *format,...); //添加一条日志
     void AppendLogLevelTitle_(LOG_LEVEL level) ;
 
@@ -48,10 +48,10 @@ private:
     condition_variable que_not_empty;
 
     unique_ptr<thread>  workThread_ ; 
-    queue<string> logQue_ ;     
+    queue<string> logQue_ ;    
     
-    const char* path_ ;    
-    const char* suffix_ ;   
+    const char* path_ ;  
+    const char* suffix_ ;  
 
     static const int LOG_NAME_LEN = 100 ;
     static const int MAX_LINES = 5000 ;

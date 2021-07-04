@@ -1,7 +1,8 @@
 #include "httprequest.h"
+#include <fstream>
 using namespace std;
 
-const unordered_set<string> HttpRequest::DEFAULT_HTML_REQUEST{ 
+const unordered_set<string> HttpRequest::DEFAULT_HTML_REQUEST{  //页面信息
             "/index.html", 
             "/register.html", 
             "/login.html",
@@ -14,15 +15,21 @@ const unordered_set<string> HttpRequest::DEFAULT_HTML_REQUEST{
 
 const unordered_map<string, int> HttpRequest::DEFAULT_HTML_POST_REQUEST {
             {"/registerSubmit", 0},
-            {"/loginSubmit", 1}
-            }; 
+            {"/loginSubmit", 1},
+            {"/uploadfile", 2}
+            };
 
 void HttpRequest::Init() {
-    method_ = path_ = version_ = body_ = "";
+    method_ = path_ = version_ = "";
+    body_ = nullptr ;
     master_state_ = REQUEST_LINE;
     header_.clear();
     post_.clear();
     userName = "";
+
+    fileSaveDir_ = getcwd(nullptr, 256);
+    assert(fileSaveDir_.data());
+    fileSaveDir_ += "/../resources/upload";
 }
 
 bool HttpRequest::IsKeepAlive() const {
@@ -32,47 +39,49 @@ bool HttpRequest::IsKeepAlive() const {
     return false;
 }
 
-bool HttpRequest::parse(Buffer& buff) {
+bool HttpRequest::parseData(Buffer& buff) {
     const char CRLF[] = "\r\n";
     if(buff.ReadableBytes() <= 0) {
         return false;
     }
     while(buff.ReadableBytes() && master_state_ != FINISH) {
-        const char* lineEnd = search(buff.Peek(), buff.BeginWriteConst(), CRLF, CRLF + 2);
-        std::string line(buff.Peek(), lineEnd);    
+        const char* lineEnd = search(buff.Peek(), buff.BeginWriteConst(), CRLF, CRLF + 2);//在buff中匹配\r\n
+        std::string line(buff.Peek(), lineEnd);   
         switch(master_state_)
         {
         case REQUEST_LINE:
-            if(!ParseRequestLine_(line)) {   
+            if(!ParseRequestLine_(line)) {   //解析请求行
                 return false;
             }
-            ParsePath_();  
+            ParsePath_(); 
+            buff.RecycleTo(lineEnd + 2);
             break;    
         case HEADERS:
-            ParseHeader_(line);   
-            if(buff.ReadableBytes() <= 2) { 
+            ParseHeader_(line);    			//解析请求头
+            if(buff.ReadableBytes() <= 2) {
                 master_state_ = FINISH;
             }
+            buff.RecycleTo(lineEnd + 2);
             break;
         case BODY:
-            ParseBody_(line);  
+            body_ = &buff;
+            ParseBody_(); 					//解析请求体
             break;
         default:
             break;
         }
-        if(lineEnd == buff.BeginWrite()) { break; }
-        buff.RetrieveUntil(lineEnd + 2);
     }
+    buff.RecycleAll();
     LOG_DEBUG("[%s], [%s], [%s]", method_.c_str(), path_.c_str(), version_.c_str());
     return true;
 }
 
 void HttpRequest::ParsePath_() {
-    if(method_ == "GET")  
+    if(method_ == "GET")
     {
         char* path_temp ;
         path_temp = (char*) malloc(100);
-        if(-1 != sscanf(path_.data(), "%[^?]?%*[^?]", path_temp)) 
+        if(-1 != sscanf(path_.data(), "%[^?]?%*[^?]", path_temp))  //匹配
         {
             path_ = path_temp ;
         }
@@ -82,7 +91,7 @@ void HttpRequest::ParsePath_() {
     if(path_ == "/") {
         path_ = "/index.html";
     }
-    decode_str(path_ ); 
+    decode_str(path_ );  //解码中文字符
 }
 
 bool HttpRequest::ParseRequestLine_(const string& line) {
@@ -110,11 +119,9 @@ void HttpRequest::ParseHeader_(const string& line) {
     }
 }
 
-void HttpRequest::ParseBody_(const string& line) {
-    body_ = line;
-    ParsePost_();  
+void HttpRequest::ParseBody_() {
+    ParsePost_();   
     master_state_ = FINISH;
-    LOG_DEBUG("Body:%s, len:%d", line.c_str(), line.size());
 }
 
 uint32_t HttpRequest::ConverHex(char ch) {
@@ -125,32 +132,28 @@ uint32_t HttpRequest::ConverHex(char ch) {
 }
 
 void HttpRequest::ParsePost_() {
-    if(method_ == "POST" && header_["Content-Type"] == "application/x-www-form-urlencoded") {   
+    if(method_ == "POST" && header_["Content-Type"] == "application/x-www-form-urlencoded") 
+    {   
         if(!ParseBodyForUserInfo()) return ;  
-        if(DEFAULT_HTML_POST_REQUEST.count(path_)) {  
+        if(DEFAULT_HTML_POST_REQUEST.count(path_)) {  //验证，注册或登陆
             int tag = DEFAULT_HTML_POST_REQUEST.find(path_)->second;
             LOG_DEBUG("Tag:%d", tag);
             if(tag == 0 || tag == 1) {
                 bool isLogin = (tag == 1);
-
                 sqlVerifyState sqlVerifyRes = UserVerify(post_["username"], post_["password"], isLogin);
                 switch (sqlVerifyRes)
                 {
                 case loginOK:
-                    /* code */
                     path_ = "/welcome.html";
                     userName = post_["username"] ;
                     break;  
                 case registerOK:
-                    /* code */
                     path_ = "/login.html";
                     break;
                 case loginFail:
-                    /* code */
                     path_ = "/loginError.html";
                     break;                
                 case registerFail:
-                    /* code */
                     path_ = "/registerError.html";
                     break; 
                 default:
@@ -159,29 +162,87 @@ void HttpRequest::ParsePost_() {
                 }
             }
         }
-    }   
+    } 
+    else if(method_ == "POST" && header_["Content-Type"].find("multipart/form-data") != string::npos) //对上传的文件进行解析
+    {
+        if(DEFAULT_HTML_POST_REQUEST.count(path_) && ParseBodyForFile()) path_ = "upload_ok";   
+        else path_ = "upload_err";
+    } 
+
+    master_state_ = FINISH;
+}
+
+bool HttpRequest::ParseBodyForFile() {
+    if(body_->ReadableBytes() <= 0) return false;
+    char fileName[256];
+    const char CRLF[] = "\r\n";
+    const char* lineEnd;
+
+    while(true)
+    {
+        lineEnd = search(body_->Peek(), body_->BeginWriteConst(), CRLF, CRLF + 2);
+        if(lineEnd == body_->Peek())  
+        {
+            break ;
+        }
+        std::string line(body_->Peek(), lineEnd);     
+        if(line.find("filename") != string::npos)   
+        {   
+            char targ[10] = "filename";
+            const char* temp = search(line.data() , line.data()+line.size() , targ , targ + 8);
+            if(-1 != sscanf(temp, "%*[^=]=\"%[^=^\"]", fileName)) 
+            {
+                decode_str(fileName); 
+            }         
+        }
+        body_->RecycleTo(lineEnd + 2);
+    }
+
+    char targ[10] = "------";     //buff最后一行是分隔符的形式
+    const char* temp = search(body_->Peek() , body_->Peek() + body_->ReadableBytes() , targ , targ + 6);
+    if(temp) body_->RecycleFrom(temp); 
+
+    assert(body_->Peek() == lineEnd);
+
+    return SaveFile(fileName) ;
 }
 
 bool HttpRequest::ParseBodyForUserInfo() {
-    if(body_.size() == 0) { return false; }
+    if(body_->ReadableBytes() <= 0) { return false; }
 
     char name[100] ;
     char password[100] ;
-    //正则表达式匹配，%*[^=] *号表示跳过匹配到的部分，^=表示匹配不是=的内容
-    if(-1 != sscanf(body_.data(), "%*[^=]=%[^&]&%*[^=]=%[^=]", name , password))  //匹配等号后面的内容
-    {  //body_.data() 或 body_.c_str() 将string转换成 const char*
-
+    if(-1 != sscanf(body_->Peek(), "%*[^=]=%[^&]&%*[^=]=%[^=]", name , password)) 
+    {
         decode_str(name);  //解码中文字符
         post_["username"] = name;
         post_["password"] = password ;
         return true ;
     }
-
     LOG_ERROR("parse username and password error");
     return false;
 }
 
-//解码中文字符
+bool HttpRequest::SaveFile(char filename[]) 
+{
+    if(fileSaveDir_.empty()) LOG_DEBUG("httprequest: fileSaveDir_ = s%" , fileSaveDir_);
+
+    ofstream FILE_save ;
+    FILE_save.open(fileSaveDir_ + "/" + filename);
+    if(FILE_save.is_open()) 
+    {
+        FILE_save<<body_->Peek();
+        LOG_INFO("httprequest: save file successed ! dir : %s" , fileSaveDir_ + "/" + filename);
+    }
+    else 
+    {
+        LOG_DEBUG("httprequest: save file error , can not open file !");
+    }
+    FILE_save.close();
+
+    return true ;
+}
+
 void HttpRequest:: decode_str(char *from)
 {
     char *to = from ;
@@ -195,7 +256,6 @@ void HttpRequest:: decode_str(char *from)
     }
     *to = '\0';
 }
-
 
 void HttpRequest:: decode_str(string& from)
 {
@@ -211,66 +271,53 @@ void HttpRequest:: decode_str(string& from)
     for(; j < i ; ++ j) from.pop_back();
 }
 
-//判断注册或登陆操作是否有效，判断用户名密码
 sqlVerifyState HttpRequest::UserVerify(const std::string& name, const std::string& pwd, bool isLogin){
     if(name == "" || pwd == "") { return otherError; }
     LOG_INFO("Verify name:%s pwd:%s", name.c_str(), pwd.c_str());
     MYSQL* sql;
-    SqlConnRAII(&sql,  SqlConnPool::Instance());  //向sql连接池申请一个连接，析构函数中归还
+    SqlConnRAII(&sql,  SqlConnPool::Instance()); 
     assert(sql);
-    
-    //bool flag = false;
     
     char order[256] = { 0 };
     MYSQL_RES *res = nullptr;
     
-    //if(!isLogin) { flag = true; }
-    /* 查询用户及密码 */
     snprintf(order, 256, "SELECT username, passwd FROM user WHERE username='%s' LIMIT 1", name.c_str());
     LOG_DEBUG("%s", order);
 
-    if(mysql_query(sql, order)) { //查询成功返回0
+    if(mysql_query(sql, order)) { 
         mysql_free_result(res);
-        return otherError;  //查询失败，内部错误
+        return otherError;  
     }
     res = mysql_store_result(sql);
-    //unsigned int j = 0;
     mysql_num_fields(res);
-    // MYSQL_FIELD *fields = nullptr;
     mysql_fetch_fields(res);
 
     while(MYSQL_ROW row = mysql_fetch_row(res)) {
         LOG_DEBUG("MYSQL ROW: %s %s", row[0], row[1]);
         string password(row[1]);
-        /* 登陆行为*/
         if(isLogin) {
             if(pwd == password) { return loginOK; }
             else {
-                //flag = false; 
                 LOG_DEBUG("pwd error!");
                 return loginFail;
             }
         } 
-        else {  //注册行为，用户名已被使用
-            //flag = false; 
+        else { 
             LOG_DEBUG("user used!");
             return registerFail;
         }
     }
     mysql_free_result(res);
 
-    /* 注册行为 且 用户名未被使用*/
     if(!isLogin) {
         LOG_DEBUG("register!");
         bzero(order, 256);
         snprintf(order, 256,"INSERT INTO user(username, passwd) VALUES('%s','%s')", name.c_str(), pwd.c_str());
         LOG_DEBUG( "%s", order);
         if(mysql_query(sql, order)) { 
-            LOG_DEBUG( "Insert error!");
-            //flag = false; 
-            return otherError;   //mysql插入数据失败，内部错误
+            LOG_DEBUG( "Insert error!"); 
+            return otherError; 
         }
-        //flag = true;
         return registerOK;
     }
     SqlConnPool::Instance()->FreeConn(sql);
@@ -303,7 +350,7 @@ std::string HttpRequest::GetPost(const std::string& key) const {
 
 std::string HttpRequest::GetPost(const char* key) const {
     assert(key != nullptr);
-    if(post_.count(key) == 1) {   //count 返回key的个数
+    if(post_.count(key) == 1) { 
         return post_.find(key)->second;
     }
     return "";

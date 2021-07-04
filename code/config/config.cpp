@@ -2,7 +2,6 @@
 
 config::config()
 {
-    //default config para
     port_ = 9999 ;          // p  端口
     trigMode_ = 3 ;         // t  触发模式
     timeoutS_ = 10 ;        // m  超时时间 s
@@ -28,7 +27,7 @@ void config::parse_arg(int argc , char* argv[])
         {
         case 'p':
         {
-            port_ = atoi(optarg); 
+            port_ = atoi(optarg);  //atoi char to int
             break ;
         }
         case 't':

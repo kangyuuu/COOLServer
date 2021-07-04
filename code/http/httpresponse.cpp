@@ -87,12 +87,22 @@ void HttpResponse::Init(const string& srcDir, string& path, bool isKeepAlive, in
 }
 
 void HttpResponse::MakeResponse(Buffer& buff) {
-    //定位到对应的文件夹
     char fileSuffix[10] ;
     *fileSuffix = '.';
-    if(-1 != sscanf(path_.data(), "%*[^.].%[^.]", fileSuffix+1 )) 
+    if(path_ == "upload_ok")
     {
-        if(SOURCE_FOLDER.find(fileSuffix) == SOURCE_FOLDER.end()) code_ = 404;
+        code_ = 200; 
+        buff.Append("upload file ok !");
+
+    }
+    else if(path_ == "upload_err")
+    {
+        code_ = 400; 
+        buff.Append("something error happened !");
+    }
+    else if(-1 != sscanf(path_.data(), "%*[^.].%[^.]", fileSuffix+1 ))  
+    {
+        if(SOURCE_FOLDER.find(fileSuffix) == SOURCE_FOLDER.end()) code_ = 404; 
         else path_ = SOURCE_FOLDER.find(fileSuffix)->second + path_ ; 
         MakeResponse_FILE(buff); 
     }
@@ -103,30 +113,30 @@ void HttpResponse::MakeResponse(Buffer& buff) {
     return ;
 }
 
-void HttpResponse::MakeResponse_FILE(Buffer& buff)  
+void HttpResponse::MakeResponse_FILE(Buffer& buff) 
 {
     if(stat((srcDir_ + path_).data(), &mmFileStat_) < 0 || S_ISDIR(mmFileStat_.st_mode)) {
         code_ = 404;
     }
-    else if(!(mmFileStat_.st_mode & S_IROTH)) {
+    else if(!(mmFileStat_.st_mode & S_IROTH)) {  
         code_ = 403;
     }
     else if(code_ == -1) { 
         code_ = 200; 
     }
-    ErrorHtml_();  
+    ErrorHtml_();   
     AddStateLine_(buff);
     AddHeader_(buff);
     AddContent_(buff);
 }
-void HttpResponse::MakeResponse_MENU(Buffer& buff) 
+void HttpResponse::MakeResponse_MENU(Buffer& buff)  
 {
-    if(path_ == "/MENU") path_.clear();
+    if(path_ == "/MENU") path_.clear(); //响应主目录
 
     if(stat((srcDir_ + path_).data(), &mmFileStat_) < 0 || S_ISREG(mmFileStat_.st_mode)) {
         code_ = 404;
     }
-    else if(!(mmFileStat_.st_mode & S_IROTH)) {
+    else if(!(mmFileStat_.st_mode & S_IROTH)) { 
         code_ = 403;
     }
     else if(code_ == -1) { 
@@ -197,9 +207,10 @@ void HttpResponse::AddContent_(Buffer& buff) {
     buff.Append("Content-length: " + to_string(mmFileStat_.st_size) + "\r\n\r\n");
 }
 
-void HttpResponse::AddMenuHTML(Buffer &buff) 
+void HttpResponse::AddMenuHTML(Buffer &buff)
 {
     string body ;
+    //encode_str(path_ );   //如果路径有中文，编码 %AC
 
     body.clear();
     body += "<!DOCTYPE html>";
@@ -207,12 +218,13 @@ void HttpResponse::AddMenuHTML(Buffer &buff)
     body += "<body><h3>当前目录："+ path_ + "</h3><table>" ;
 
     struct dirent** dirPtr ;
-    int res = scandir((srcDir_ + path_).data() , &dirPtr , NULL , alphasort); //扫描文件夹
+    int res = scandir((srcDir_ + path_).data() , &dirPtr , NULL , alphasort);
 
     struct stat tempStat ;
     for(int i = 0 ; i < res ; ++ i)
     {
         string name = dirPtr[i]->d_name;
+        //encode_str(name);  //编码
 
         if(name == "." || name == "..") continue ;
         
@@ -228,7 +240,7 @@ void HttpResponse::AddMenuHTML(Buffer &buff)
             body +=  to_string((float)tempStat.st_size/1024);
             body += "Mb</td></tr>";
         }
-        else if(S_ISDIR(tempStat.st_mode))  
+        else if(S_ISDIR(tempStat.st_mode))   //是一个文件夹  
         {
             body += "<tr><td><a href=\"" ;
             if(!path_.empty()) body+= path_ + "/";
@@ -267,6 +279,12 @@ void HttpResponse::encode_str(std::string& from)
 			strTemp += '%';
 			strTemp += ToHex((unsigned char)from[i] >> 4);
 			strTemp += ToHex((unsigned char)from[i] % 16);
+            // strTemp += '%';
+			// strTemp += ToHex((unsigned char)from[i+1] >> 4);
+			// strTemp += ToHex((unsigned char)from[i+1] % 16);
+            // strTemp += '%';
+			// strTemp += ToHex((unsigned char)from[i+2] >> 4);
+			// strTemp += ToHex((unsigned char)from[i+2] % 16);
 		}
 	}
     from = strTemp;
@@ -289,7 +307,7 @@ void HttpResponse::UnmapFile() {
 
 string HttpResponse::GetFileType_() {
     string::size_type idx = path_.find_last_of('.');
-    if(idx == string::npos) { 
+    if(idx == string::npos) {  //string::npos 代表没有匹配
         return "text/html";
     }
     string suffix = path_.substr(idx);
@@ -297,6 +315,7 @@ string HttpResponse::GetFileType_() {
         return SUFFIX_TYPE.find(suffix)->second;
     }
     return "text/plain";
+    //return "text/html";
 }
 
 void HttpResponse::ErrorContent(Buffer& buff, string message) 

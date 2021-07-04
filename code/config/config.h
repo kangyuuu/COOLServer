@@ -15,16 +15,16 @@ public:
     int port_ ;         
     int trigMode_ ;   
     int timeoutS_ ;   
-    bool optLinger_ ;   
+    bool optLinger_ ;  
 
-    int sqlPort_ ;      //Mysql配置
+    int sqlPort_ ;    
     std::string sqlUsr_ ;
     std::string sqlPSWD_ ;
     std::string dbName_ ;
     int sqlPoolNum_ ;
 
-    int threadPoolNum_ ;   
-    bool openLog_ ;       
-    int logQueSize_ ;     
+    int threadPoolNum_ ;  
+    bool openLog_ ;      
+    int logQueSize_ ;   
 
 };

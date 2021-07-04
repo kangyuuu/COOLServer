@@ -35,7 +35,7 @@ void HeapTimer::nodeToBack(TimerNode* node)   {
 
 void HeapTimer::addNode(int fd, int timeout, const std::function<void()> cb) {
     assert(fd >= 0);
-    if(node_map_.find(fd) == node_map_.end()) { 
+    if(node_map_.find(fd) == node_map_.end()) {
         TimerNode* temp = new TimerNode();
         temp->fd_ = fd ;
         gettimeofday(&temp->endTime_ , nullptr);
@@ -53,6 +53,7 @@ void HeapTimer::addNode(int fd, int timeout, const std::function<void()> cb) {
 }
 
 void HeapTimer::removeNode(int fd) {
+
     if(node_map_.find(fd) == node_map_.end()) return ;
     TimerNode* node = node_map_[fd] ;
     assert(node != nullptr);  
@@ -68,8 +69,8 @@ void HeapTimer::removeNode(int fd) {
 void HeapTimer::updateNode(int fd, int timeout) {
     assert(node_map_.find(fd) != node_map_.end());
     gettimeofday(&node_map_[fd]->endTime_, nullptr);
-    node_map_[fd]->endTime_.tv_sec += timeout ;    //更新时间戳
-    nodeToBack(node_map_[fd]); 
+    node_map_[fd]->endTime_.tv_sec += timeout ;   
+    nodeToBack(node_map_[fd]);  
 }
 
 void HeapTimer::removeEnding() {
@@ -77,7 +78,7 @@ void HeapTimer::removeEnding() {
     TimerNode* node = head_->next ;
     timeval tmv ;
     while(node != back_) {
-        gettimeofday(&tmv , nullptr); 
+        gettimeofday(&tmv , nullptr);  
         if(tmv.tv_sec < node->endTime_.tv_sec) break ;
         if(node_map_.find(node->fd_) == node_map_.end()) 
         {
@@ -90,7 +91,7 @@ void HeapTimer::removeEnding() {
 }
 
 int HeapTimer::nextNodeClock() {
-    removeEnding();  
+    removeEnding();    //清除超时节点
     if(node_map_.empty()) return -1 ;
     timeval tmv ;
     gettimeofday(&tmv , nullptr);

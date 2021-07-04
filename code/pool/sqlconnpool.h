@@ -13,8 +13,8 @@ class SqlConnPool {
 public:
     static SqlConnPool *Instance();
 
-    MYSQL *GetConn();  
-    void FreeConn(MYSQL * conn);
+    MYSQL *GetConn();  //获取一个连接
+    void FreeConn(MYSQL * conn);  //归还一个连接
     int GetFreeConnCount();
 
     void Init(const char* host, int port,
@@ -35,5 +35,4 @@ private:
     sem_t semId_;
 };
 
-
-#endif // SQLCONNPOOL_H
+#endif 

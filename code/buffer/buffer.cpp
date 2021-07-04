@@ -17,25 +17,31 @@ const char* Buffer::Peek() const {
     return BeginPtr_() + readPos_;
 }
 
-void Buffer::Retrieve(size_t len) {
+void Buffer::Recycle(size_t len) {
     assert(len <= ReadableBytes());
     readPos_ += len;
 }
 
-void Buffer::RetrieveUntil(const char* end) {
+void Buffer::RecycleTo(const char* end) {
     assert(Peek() <= end );
-    Retrieve(end - Peek());
+    Recycle(end - Peek());
 }
 
-void Buffer::RetrieveAll() {
+void Buffer::RecycleFrom(const char* from) {
+    assert(Peek() <= from );  
+    writePos_ = from - Peek() + readPos_ ;
+    bzero(&buffer_[writePos_], buffer_.size() - writePos_);
+}
+
+void Buffer::RecycleAll() {
     bzero(&buffer_[0], buffer_.size());
     readPos_ = 0;
     writePos_ = 0;
 }
 
-std::string Buffer::RetrieveAllToStr() {
+std::string Buffer::RecycleAllReturnStr() {
     std::string str(Peek(), ReadableBytes());
-    RetrieveAll();
+    RecycleAll();
     return str;
 }
 
@@ -79,26 +85,53 @@ void Buffer::EnsureWriteable(size_t len) {
 }
 
 ssize_t Buffer::ReadFd(int fd, int* saveErrno) {
-    char buff[65535];
-    struct iovec iov[2];
-    const size_t writable = WritableBytes();
-    iov[0].iov_base = BeginPtr_() + writePos_;
-    iov[0].iov_len = writable;
-    iov[1].iov_base = buff;
-    iov[1].iov_len = sizeof(buff);
+    const size_t writable = 1024;
+    char buff[writable + 1];
+    memset(buff , 0 , sizeof(buff));
+    struct iovec iov[1];
+    ssize_t read_sum = 0 ;
+    //保证数据读完
+    while (true)
+    {
+        memset(buff , 0 , sizeof(buff));
+        iov[0].iov_base = buff;
+        iov[0].iov_len = writable;
 
-    const ssize_t len = readv(fd, iov, 2);
-    if(len < 0) {
-        *saveErrno = errno;
-    }
-    else if(static_cast<size_t>(len) <= writable) {
-        writePos_ += len;
-    }
-    else {
-        writePos_ = buffer_.size();
-        Append(buff, len - writable);
-    }
-    return len;
+        const ssize_t len = readv(fd, iov, 1);
+        if(len < 0) {
+            *saveErrno = errno;
+            break ;
+        } 
+        else {
+            Append(buff, len);
+            read_sum += len ;
+        }
+    }  
+    return read_sum;
+
+    // char buff[65535];
+    // struct iovec iov[2];
+    // const size_t writable = WritableBytes();
+    // /* 分散读， 保证数据全部读完 */
+    // iov[0].iov_base = BeginPtr_() + writePos_;
+    // iov[0].iov_len = writable;
+    // iov[1].iov_base = buff;
+    // iov[1].iov_len = sizeof(buff);
+
+    // const ssize_t len = readv(fd, iov, 2);
+    // if(len < 0) {
+    //     *saveErrno = errno;
+    // }
+    // else if(static_cast<size_t>(len) <= writable) {
+    //     writePos_ += len;
+    // }
+    // else {
+    //     writePos_ = buffer_.size();
+    //     Append(buff, len - writable);
+    // }
+    // std::cout<< "iov0 : " << iov[0].iov_base << std::endl ;
+    // std::cout<< "iov1 : " << iov[1].iov_base << std::endl ;
+    // return len;
 }
 
 ssize_t Buffer::WriteFd(int fd, int* saveErrno) {
